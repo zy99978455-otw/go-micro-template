@@ -4,7 +4,6 @@ go 1.25.3
 
 require (
 	github.com/ethereum/go-ethereum v1.16.7
-	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/wire v0.7.0
 	github.com/hashicorp/consul/api v1.33.0
@@ -37,6 +36,7 @@ require (
 	github.com/ethereum/c-kzg-4844/v2 v2.1.5 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fatih/color v1.16.0 // indirect
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

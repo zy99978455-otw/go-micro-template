@@ -11,35 +11,35 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	// 1. 引入业务层和数据层
+	// 引入各层
 	"github.com/zy99978455-otw/go-micro-template/internal/data"
 	"github.com/zy99978455-otw/go-micro-template/internal/server"
-
-	// 2. 引入基础设施层
-	"github.com/zy99978455-otw/go-micro-template/pkg/bootstrap"
+	"github.com/zy99978455-otw/go-micro-template/pkg/config"
 	"github.com/zy99978455-otw/go-micro-template/pkg/database"
 	"github.com/zy99978455-otw/go-micro-template/pkg/global"
+	"github.com/zy99978455-otw/go-micro-template/pkg/logger"
 	"github.com/zy99978455-otw/go-micro-template/pkg/register"
 )
 
 func main() {
-	// ================= 1. 初始化配置 =================
-	// 以前是在 InitComponents 里做的，现在我们要显式做
-	// 优先读取 config-local.yaml，没有则读取 config-debug.yaml
+	// ================= 1. 初始化配置 (不再依赖 global) =================
 	configPath := "configs/config-local.yaml"
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		configPath = "configs/config-debug.yaml"
 	}
 	
-	conf, err := bootstrap.NewConfig(configPath)
+	// 注意：如果你的 NewConfig 在 pkg/config/loader.go 里，这里包名可能是 config
+	// 如果在 pkg/bootstrap/config.go 里，包名可能是 bootstrap
+	// 请根据你实际的包名修改调用
+	conf, err := config.NewConfig(configPath) 
 	if err != nil {
 		panic(fmt.Sprintf("加载配置失败: %v", err))
 	}
 
 	// ================= 2. 初始化日志 =================
-	bootstrap.InitLogger() // 这个暂时还没改，还是依赖 global.AppConfig，没问题
+	logger.InitLogger() // 暂时保持原样
 
-	// ================= 3. 初始化基础设施 (DB, Redis) =================
+	// ================= 3. 初始化基础设施 (显式传参 conf) =================
 	// MySQL
 	db, cleanupDB, err := database.NewMySQLClient(conf)
 	if err != nil {
@@ -53,43 +53,39 @@ func main() {
 		global.Log.Errorf("Redis Init Failed: %v", err)
 	}
 	defer cleanupRedis()
-
 	// ================= 4. 初始化 Data 层 (依赖注入) =================
 	
-	// 先初始化 RPC Manager
+	// 4.1 先初始化 RPC Manager (传入 conf)
 	rpcMgr := data.NewRPCManager(conf)
 
-	// 然后注入到 Data 层
+	// 4.2 然后注入到 Data 层
 	dataModule, cleanupData, err := data.NewData(db, rdb, rpcMgr)
 	if err != nil {
 		global.Log.Fatalf("Data 层初始化失败: %v", err)
 	}
 	defer cleanupData()
 
+	// 验证 RPC
 	fmt.Println("------------------------------------------------")
-
-	// ================= 🔥 验证 RPC Manager 是否工作 =================
 	targetChainID := int64(1)
 	client, err := dataModule.GetRPCClient(targetChainID)
-
 	if err != nil {
-		global.Log.Errorf("❌ [验证失败] 无法获取 ChainID %d 的客户端: %v", targetChainID, err)
+		global.Log.Errorf("❌ [验证失败] 无法获取 ChainID %d: %v", targetChainID, err)
 	} else {
 		height, _ := client.BlockNumber(context.Background())
-		global.Log.Infof("✅ [验证成功] 通过 RPCManager 拿到了客户端! ChainID: %d, 当前高度: %d", targetChainID, height)
+		global.Log.Infof("✅ [验证成功] RPC工作正常! ChainID: %d, Height: %d", targetChainID, height)
 	}
-
 	fmt.Println("------------------------------------------------")
 
-	httpPort := global.AppConfig.Server.Port
+	// ================= 5. 启动 HTTP 服务 =================
+	httpPort := conf.Server.Port // 使用 conf，不用 global
 	fmt.Printf("\n🔥🔥🔥 HTTP服务启动！端口:%d 🔥🔥🔥\n\n", httpPort)
 
-	// ================= 5. 启动 HTTP 服务 =================
-	if global.AppConfig.Server.Mode == "release" {
+	if conf.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// 调用 Server 层进行组装
+	// 组装 Server
 	r := server.NewHTTPServer(dataModule)
 
 	httpSrv := &http.Server{
@@ -103,38 +99,44 @@ func main() {
 		}
 	}()
 
-	// ================= 6. 服务注册与优雅退出 =================
-	registerToConsul(httpPort)
+	// ================= 6. 服务注册 (Consul) =================
+	// 🔥 传入 conf
+	registerToConsul(httpPort, conf)
 
+	// ================= 7. 优雅停机 =================
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit 
 
 	global.Log.Info("正在关闭服务 (Shutting down)...")
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	
 	if err := httpSrv.Shutdown(ctx); err != nil {
 		global.Log.Error("HTTP 强制关闭:", err)
 	} else {
 		global.Log.Info("✅ [HTTP] 服务已停止")
 	}
-
-	global.Log.Info("👋 服务退出完成 (Bye!)")
+	global.Log.Info("👋 服务退出完成")
 }
+// registerToConsul 辅助函数
+// 🔥 修改：接收 conf *config.AppConfig 参数
+func registerToConsul(httpPort int, conf *config.AppConfig) {
+	
+	// 传入 conf 初始化
+	consulReg, err := register.NewConsulRegister(conf)
 
-// 注册函数保持不变...
-func registerToConsul(httpPort int) {
-    // ... (内容不变)
-    consulReg, err := register.NewConsulRegister()
 	if err == nil && consulReg != nil {
-		serviceID := fmt.Sprintf("%s-%d", global.AppConfig.Server.Name, httpPort)
+		// 使用 conf 获取服务名
+		serviceID := fmt.Sprintf("%s-%d", conf.Server.Name, httpPort)
+
 		registerErr := consulReg.RegisterService(
-			global.AppConfig.Server.Name,
+			conf.Server.Name,
 			serviceID,
 			httpPort,
 			[]string{"http", "web3"},
 		)
+
 		if registerErr != nil {
 			global.Log.Warnf("Consul 注册失败: %v", registerErr)
 		} else {

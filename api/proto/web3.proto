@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package proto;
+
+// Go 代码存放路径
+option go_package = "github.com/zy99978455-otw/go-micro-template/api/proto";
+
+// 定义 Web3 服务接口
+service Web3Service {
+  // 定义一个方法: 输入 ChainID，返回高度
+  rpc GetBlockHeight (GetBlockHeightRequest) returns (GetBlockHeightResponse);
+}
+
+// 定义请求参数
+message GetBlockHeightRequest {
+  int64 chain_id = 1;
+}
+
+// 定义返回结果
+message GetBlockHeightResponse {
+  int64 chain_id = 1;
+  int64 height = 2;
+}

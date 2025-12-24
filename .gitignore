@@ -1,0 +1,40 @@
+# Binaries (编译生成的二进制文件)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output (编译输出目录)
+bin/
+dist/
+
+# IDEs (编辑器生成的配置)
+.idea/
+.vscode/
+*.swp
+
+# OS (操作系统生成的垃圾文件)
+.DS_Store
+Thumbs.db
+
+# Logs (日志文件)
+*.log
+logs/
+
+# Secrets & Configs (重要！)
+# 我们通常保留 config模板，但忽略包含真实密码的 config-debug.yaml
+# 不过因为你是作为模板仓库，可以暂时保留 yaml，但建议以后把敏感信息替换成 "YOUR_PASSWORD"
+# 如果你想忽略本地调试配置，解开下面这行的注释：
+# configs/config-debug.yaml
+
+# 依赖文件夹
+vendor/
+
+# 系统文件
+.DS_Store
+
+**/config-local.yaml
